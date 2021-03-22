@@ -2,9 +2,11 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:radio_mobile/models/station.dart';
 import 'package:radio_mobile/services/radio_config.dart';
-import 'package:audioplayers/audioplayers.dart';
+import 'package:audio_service/audio_service.dart';
+import 'package:just_audio/just_audio.dart';
 
 List<TextButton> radioButtons;
+final _player = AudioPlayer(); // e.g. just_audio
 
 class RadioStationsScreen extends StatefulWidget {
   @override
@@ -25,34 +27,72 @@ class _RadioStationsScreenState extends State<RadioStationsScreen> {
       radioButtons.add(TextButton(
         onPressed: () {
           print(radio.id.toString() + ' pressed ');
-          play(radio.urls[0]);
+          //play(radio.urls[0]);
+          onStart(null);
         },
         child: Text(radio.label),
       ));
     }
   }
 
-  play(String url) async {
-    AudioPlayer audioPlayer = AudioPlayer();
-
-    int result = await audioPlayer.play(url);
-    if (result == 1) {
-      // success
-      print('success');
-      audioPlayer.onPlayerError.listen((msg) {
-        print('audioPlayer error : $msg');
-        setState(() {
-          print('errrrrrrrrrrrror');
-        });
-      });
-
-      audioPlayer.onPlayerCompletion.listen((event) {
-        setState(() {
-          print('compleeeeete');
-        });
-      });
-    }
+  onStart(Map<String, dynamic> params) async {
+    final mediaItem = MediaItem(
+      id: "https://streaming2.toutech.net/jawharafm",
+      album: "Foo",
+      title: "Bar",
+    );
+    // Tell the UI and media notification what we're playing.
+    AudioServiceBackground.setMediaItem(mediaItem);
+    // Listen to state changes on the player...
+    _player.playerStateStream.listen((playerState) {
+      // ... and forward them to all audio_service clients.
+      AudioServiceBackground.setState(
+        playing: playerState.playing,
+        // Every state from the audio player gets mapped onto an audio_service state.
+        processingState: {
+          ProcessingState.idle: AudioProcessingState.none,
+          ProcessingState.loading: AudioProcessingState.connecting,
+          ProcessingState.buffering: AudioProcessingState.buffering,
+          ProcessingState.ready: AudioProcessingState.ready,
+          ProcessingState.completed: AudioProcessingState.completed,
+        }[playerState.processingState],
+        // Tell clients what buttons/controls should be enabled in the
+        // current state.
+        controls: [
+          playerState.playing ? MediaControl.pause : MediaControl.play,
+          MediaControl.stop,
+        ],
+      );
+    });
+    // Play when ready.
+    _player.play();
+    // Start loading something (will play when ready).
+    await _player.setUrl(mediaItem.id);
   }
+  // play(String url) async {
+  //   AudioPlayer audioPlayer = AudioPlayer();
+
+  //   int result = await audioPlayer.play(url);
+  //   if (result == 1) {
+  //     // success
+  //     print('success');
+  //     audioPlayer.onPlayerError.listen((msg) {
+  //       print('audioPlayer error : $msg');
+  //       setState(() {
+  //         print('errrrrrrrrrrrror');
+  //       });
+  //     });
+
+  //     audioPlayer.onPlayerCompletion.listen((event) {
+  //       setState(() {
+  //         print('compleeeeete');
+  //       });
+  //     });
+  //   }
+  // }
+
+  // Must be a top-level function
+  void _entrypoint() => AudioServiceBackground.run(() => AudioPlayerTask());
 
   @override
   Widget build(BuildContext context) {
@@ -63,4 +103,10 @@ class _RadioStationsScreenState extends State<RadioStationsScreen> {
       ),
     );
   }
+}
+
+class AudioPlayerTask extends BackgroundAudioTask {
+  final _player = AudioPlayer(); // e.g. just_audio
+
+  // Implement callbacks here. e.g. onStart, onStop, onPlay, onPause
 }
